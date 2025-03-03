@@ -1,0 +1,21 @@
+[project]
+name = "scratch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "aind-session>=0.3.14",
+    "fastparquet>=2024.11.0",
+    "ipykernel>=6.29.5",
+    "matplotlib>=3.10.0",
+    "npc-lims>=0.1.186",
+    "pandas[excel,xlsx]>=2.2.3",
+    "pip>=25.0.1",
+    "plotly>=6.0.0",
+    "polars[plot]>=1.21.0",
+    "pyarrow>=18.1.0",
+    "scikit-learn>=1.6.1",
+    "statsmodels>=0.14.4",
+    "tqdm>=4.67.1",
+]
