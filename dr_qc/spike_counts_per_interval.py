@@ -1,7 +1,7 @@
 import functools
 import logging
 import time
-from typing import Callable, Iterable
+from typing import Iterable
 
 import polars as pl
 import polars._typing
@@ -15,9 +15,9 @@ logger.setLevel(logging.DEBUG)
 def insert_spike_counts(
     intervals_frame: polars._typing.FrameType,
     spike_times: Iterable[float],
-    starts: pl.Expr | Iterable[pl.Expr],
-    ends: pl.Expr | Iterable[pl.Expr],
-    col_names: str | Iterable[str] = "n_spikes",
+    start: pl.Expr,
+    end: pl.Expr,
+    col_name: str = "n_spikes",
     start_inclusive: bool = True,
     end_inclusive: bool = True,
     keep_spike_times: bool = False,
@@ -25,75 +25,68 @@ def insert_spike_counts(
     """Count the number of spikes within each interval and return `intervals_frame` with `col_name`
     added. Optionally keep the spike times within each interval (disabled by default to save memory).
     """
-    if isinstance(starts, pl.Expr):
-        starts = (starts,)
-    if isinstance(ends, pl.Expr):
-        ends = (ends,)
-    if isinstance(col_names, str):
-        col_names = (col_names,)
-        
-    if len(starts) != len(ends) != len(col_names):
-        raise ValueError("start, end, and col_name must have same length")
     
     if isinstance(intervals_frame, pl.LazyFrame):
         intervals_lf = intervals_frame
     else:
         intervals_lf = intervals_frame.lazy()
 
-    def list_eval_ref(
-        listcol, refcol_a, refcol_b, op: Callable[[pl.Expr, pl.Expr, pl.Expr], pl.Expr]
-    ) -> pl.Expr:
-        """https://github.com/pola-rs/polars/issues/7210#issuecomment-2674295355"""
-        return pl.concat_list(pl.struct(listcol, refcol_a, refcol_b)).list.eval(
-            op(
-                pl.element().struct[0].explode(),
-                pl.element().struct[1],
-                pl.element().struct[2],
-            )
-        )
-
-    def is_in_interval(
-        element: pl.Expr,
-        start: pl.Expr,
-        end: pl.Expr,
-        start_inclusive: bool = True,
-        end_inclusive: bool = True,
-    ) -> pl.Expr:
-        expr = pl.lit(True)
-        if start_inclusive:
-            expr &= start <= element
-        else:
-            expr &= start < element
-        if end_inclusive:
-            expr &= element <= end
-        else:
-            expr &= element < end
-        return expr
-
+            
+    # note: join_where currently only supports inner join so intervals containing no spikes are lost.
+    # To deal with this we must update the original intervals frame:
     with_spike_count = (
         intervals_lf
         .with_columns(
-            pl.lit(sorted(spike_times)).alias("_spike_times"),
+            start.alias('_start'),
+        )
+        # extract spike times within each interval as: start <= spike_times <= stop
+        .join_where(
+            pl.LazyFrame({"spike_times": spike_times}),
+            (
+                start.le(pl.col("spike_times"))
+                if start_inclusive
+                else start.lt(pl.col("spike_times"))
+            ),
+            (
+                pl.col("spike_times").le(end)
+                if end_inclusive
+                else pl.col("spike_times").lt(end)
+            ),
+        )
+        .select('_start', 'spike_times')
+        # at this point, the df has one row per spike; we want a list of spike times per interval
+        .sort("spike_times")
+        .group_by("_start",  maintain_order=True)
+        .agg(
+            *[
+                pl.col("spike_times").len().alias(col_name),
+                # all existing columns were duplicated with the join_where, so take the first:
+                pl.all().exclude("spike_times").first(),
+            ]
+            + (
+                # optionally keep the spike times:
+                [pl.col("spike_times")]
+                if keep_spike_times
+                else []
+            ),
         )
     )
-    for (start, end, col_name) in zip(starts, ends, col_names):
-        with_spike_count = (
-            with_spike_count
-            .with_columns(
-                list_eval_ref(
-                    "_spike_times",
-                    start,
-                    end,
-                    functools.partial(
-                        is_in_interval,
-                        start_inclusive=start_inclusive,
-                        end_inclusive=end_inclusive,
-                    ),
-                ).list.sum().alias(col_name),
-            )
+    # join counts back to the original intervals frame, to preserve intervals without spikes:
+    with_spike_count = (
+        intervals_lf
+        .with_columns(
+            start.alias("_start"),
+            pl.lit(0).alias(col_name),
         )
-    if not keep_spike_times:
-        with_spike_count = with_spike_count.drop("_spike_times")
+        .update(
+            other=with_spike_count.select('_start', col_name),
+            on="_start",
+            how='left',
+            include_nulls=False,
+        )
+        .sort("_start")
+        .drop("_start")
+    )
     if isinstance(intervals_frame, pl.LazyFrame):
         return with_spike_count
     return with_spike_count.collect()
@@ -115,10 +108,11 @@ def insert_spike_counts_per_interval(
     in `starts` and `ends`, and store the counts in columns named according to `col_names`.
 
     By default, obs_intervals in the units table are applied to determine whether a unit was
-    actually recorded during each interval: if not, the spike count will be `pl.Null`, rather than
-    0. (nulls are converted to nans by the frame.to_numpy() method)
+    actually recorded during each interval: if not, the spike count will be `pl.Null` rather than
+    0 (nulls are converted to nans by the frame.to_numpy() method)
 
     Notes:
+    - requires spike times for all units to be in memory simultaneously (but does not make copies)
     - returns a frame of the same type as the input `trials_frame` (lazy or eager)
     - returned length will be equal to len(trials) * len(units)
     - spike times themselves are not stored in the returned frame
@@ -150,32 +144,30 @@ def insert_spike_counts_per_interval(
         units_df = units_df.collect()  # cannot iterate over LazyFrame.group_by()
     logger.debug(f"adding spike counts for {len(units_df)} units")
     dfs = []
-    
-    df = None
     # for each unit:
-
     for (unit_id, *_), unit_df in tqdm.tqdm(units_df.group_by(unit_id_col), total=units_df.n_unique(unit_id_col)):
         assert len(unit_df) == 1, "Expected one row per unit"
-        with_spike_counts = insert_spike_counts(
-            intervals_frame=trials_lf.with_columns(pl.lit(unit_id).alias(unit_id_col)),
-            spike_times=unit_df["spike_times"][0],
-            starts=starts,
-            ends=ends,
-            col_names=col_names,
-            start_inclusive=start_inclusive,
-            end_inclusive=end_inclusive,
-            keep_spike_times=False,
+        temp_intervals = trials_lf.with_columns(
+            pl.lit(unit_id).alias(unit_id_col),
         )
-        #! rm after testing:
-        # assert len(with_spike_counts.collect()) == len(trials_lf.collect())
-        # dfs.append(with_spike_counts)
-        if df is None:
-            df = with_spike_counts.collect()
-        else:
-            df = df.vstack(with_spike_counts.collect())
-        
-    #! rm after testing:
-    df = df.lazy()
+        # for each interval requested:
+        for start, end, col_name in zip(starts, ends, col_names):
+            # spike count column will be appended each iteration, and we overwrite the variable:
+            temp_intervals = insert_spike_counts(
+                intervals_frame=temp_intervals,
+                spike_times=unit_df["spike_times"][0],
+                start=start,
+                end=end,
+                col_name=col_name,
+                start_inclusive=start_inclusive,
+                end_inclusive=end_inclusive,
+                keep_spike_times=False,
+            )
+            #! rm after testing:
+            assert len(temp_intervals.collect()) == len(trials_lf.collect())
+        dfs.append(temp_intervals)
+
+    df = pl.concat(dfs, rechunk=rechunk)
     # df = pl.concat(dfs, rechunk=rechunk)
     if apply_obs_intervals:
         df = (
