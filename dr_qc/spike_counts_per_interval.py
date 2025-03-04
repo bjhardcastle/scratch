@@ -5,6 +5,7 @@ from typing import Callable, Iterable
 
 import polars as pl
 import polars._typing
+import tqdm
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
@@ -14,9 +15,9 @@ logger.setLevel(logging.DEBUG)
 def insert_spike_counts(
     intervals_frame: polars._typing.FrameType,
     spike_times: Iterable[float],
-    start: pl.Expr,
-    end: pl.Expr,
-    col_name: str = "n_spikes",
+    starts: pl.Expr | Iterable[pl.Expr],
+    ends: pl.Expr | Iterable[pl.Expr],
+    col_names: str | Iterable[str] = "n_spikes",
     start_inclusive: bool = True,
     end_inclusive: bool = True,
     keep_spike_times: bool = False,
@@ -24,6 +25,16 @@ def insert_spike_counts(
     """Count the number of spikes within each interval and return `intervals_frame` with `col_name`
     added. Optionally keep the spike times within each interval (disabled by default to save memory).
     """
+    if isinstance(starts, pl.Expr):
+        starts = (starts,)
+    if isinstance(ends, pl.Expr):
+        ends = (ends,)
+    if isinstance(col_names, str):
+        col_names = (col_names,)
+        
+    if len(starts) != len(ends) != len(col_names):
+        raise ValueError("start, end, and col_name must have same length")
+    
     if isinstance(intervals_frame, pl.LazyFrame):
         intervals_lf = intervals_frame
     else:
@@ -59,20 +70,28 @@ def insert_spike_counts(
             expr &= element < end
         return expr
 
-    with_spike_count = intervals_lf.with_columns(
-        pl.lit(sorted(spike_times)).alias("_spike_times"),
-    ).with_columns(
-        list_eval_ref(
-            "_spike_times",
-            start,
-            end,
-            functools.partial(
-                is_in_interval,
-                start_inclusive=start_inclusive,
-                end_inclusive=end_inclusive,
-            ),
-        ).list.sum().alias(col_name),
+    with_spike_count = (
+        intervals_lf
+        .with_columns(
+            pl.lit(sorted(spike_times)).alias("_spike_times"),
+        )
     )
+    for (start, end, col_name) in zip(starts, ends, col_names):
+        with_spike_count = (
+            with_spike_count
+            .with_columns(
+                list_eval_ref(
+                    "_spike_times",
+                    start,
+                    end,
+                    functools.partial(
+                        is_in_interval,
+                        start_inclusive=start_inclusive,
+                        end_inclusive=end_inclusive,
+                    ),
+                ).list.sum().alias(col_name),
+            )
+        )
     if not keep_spike_times:
         with_spike_count = with_spike_count.drop("_spike_times")
     if isinstance(intervals_frame, pl.LazyFrame):
@@ -131,30 +150,33 @@ def insert_spike_counts_per_interval(
         units_df = units_df.collect()  # cannot iterate over LazyFrame.group_by()
     logger.debug(f"adding spike counts for {len(units_df)} units")
     dfs = []
+    
+    df = None
     # for each unit:
-    for (unit_id, *_), unit_df in units_df.group_by(unit_id_col):
-        assert len(unit_df) == 1, "Expected one row per unit"
-        temp_intervals = trials_lf.with_columns(
-            pl.lit(unit_id).alias(unit_id_col),
-        )
-        # for each interval requested:
-        for start, end, col_name in zip(starts, ends, col_names):
-            # spike count column will be appended each iteration, and we overwrite the variable:
-            temp_intervals = insert_spike_counts(
-                intervals_frame=temp_intervals,
-                spike_times=unit_df["spike_times"][0],
-                start=start,
-                end=end,
-                col_name=col_name,
-                start_inclusive=start_inclusive,
-                end_inclusive=end_inclusive,
-                keep_spike_times=False,
-            )
-            #! rm after testing:
-            # assert len(temp_intervals.collect()) == len(trials_lf.collect())
-        dfs.append(temp_intervals)
 
-    df = pl.concat(dfs, rechunk=rechunk)
+    for (unit_id, *_), unit_df in tqdm.tqdm(units_df.group_by(unit_id_col), total=units_df.n_unique(unit_id_col)):
+        assert len(unit_df) == 1, "Expected one row per unit"
+        with_spike_counts = insert_spike_counts(
+            intervals_frame=trials_lf.with_columns(pl.lit(unit_id).alias(unit_id_col)),
+            spike_times=unit_df["spike_times"][0],
+            starts=starts,
+            ends=ends,
+            col_names=col_names,
+            start_inclusive=start_inclusive,
+            end_inclusive=end_inclusive,
+            keep_spike_times=False,
+        )
+        #! rm after testing:
+        # assert len(with_spike_counts.collect()) == len(trials_lf.collect())
+        # dfs.append(with_spike_counts)
+        if df is None:
+            df = with_spike_counts.collect()
+        else:
+            df = df.vstack(with_spike_counts.collect())
+        
+    #! rm after testing:
+    df = df.lazy()
+    # df = pl.concat(dfs, rechunk=rechunk)
     if apply_obs_intervals:
         df = (
             insert_is_observed(
