@@ -1,6 +1,7 @@
+import functools
 import logging
 import time
-from typing import Iterable
+from typing import Callable, Iterable
 
 import polars as pl
 import polars._typing
@@ -8,6 +9,7 @@ import polars._typing
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
+
 
 def insert_spike_counts(
     intervals_frame: polars._typing.FrameType,
@@ -26,62 +28,53 @@ def insert_spike_counts(
         intervals_lf = intervals_frame
     else:
         intervals_lf = intervals_frame.lazy()
-            
-    # note: join_where currently only supports inner join so intervals containing no spikes are lost.
-    # To deal with this we must update the original intervals frame:
-    with_spike_count = (
-        intervals_lf
-        .with_columns(
-            start.alias('_start'),
+
+    def list_eval_ref(
+        listcol, refcol_a, refcol_b, op: Callable[[pl.Expr, pl.Expr, pl.Expr], pl.Expr]
+    ) -> pl.Expr:
+        """https://github.com/pola-rs/polars/issues/7210#issuecomment-2674295355"""
+        return pl.concat_list(pl.struct(listcol, refcol_a, refcol_b)).list.eval(
+            op(
+                pl.element().struct[0].explode(),
+                pl.element().struct[1],
+                pl.element().struct[2],
+            )
         )
-        # extract spike times within each interval as: start <= spike_times <= stop
-        .join_where(
-            pl.LazyFrame({"spike_times": spike_times}),
-            (
-                start.le(pl.col("spike_times"))
-                if start_inclusive
-                else start.lt(pl.col("spike_times"))
+
+    def is_in_interval(
+        element: pl.Expr,
+        start: pl.Expr,
+        end: pl.Expr,
+        start_inclusive: bool = True,
+        end_inclusive: bool = True,
+    ) -> pl.Expr:
+        expr = pl.lit(True)
+        if start_inclusive:
+            expr &= start <= element
+        else:
+            expr &= start < element
+        if end_inclusive:
+            expr &= element <= end
+        else:
+            expr &= element < end
+        return expr
+
+    with_spike_count = intervals_lf.with_columns(
+        pl.lit(sorted(spike_times)).alias("_spike_times"),
+    ).with_columns(
+        list_eval_ref(
+            "_spike_times",
+            start,
+            end,
+            functools.partial(
+                is_in_interval,
+                start_inclusive=start_inclusive,
+                end_inclusive=end_inclusive,
             ),
-            (
-                pl.col("spike_times").le(end)
-                if end_inclusive
-                else pl.col("spike_times").lt(end)
-            ),
-        )
-        .select('_start', 'spike_times')
-        # at this point, the df has one row per spike; we want a list of spike times per interval
-        .sort("spike_times")
-        .group_by("_start",  maintain_order=True)
-        .agg(
-            *[
-                # all existing columns were duplicated with the join_where, so take the first:
-                pl.all().exclude("spike_times").first(),
-                pl.col("spike_times").len().alias(col_name),
-            ]
-            + (
-                # optionally keep the spike times:
-                [pl.col("spike_times")]
-                if keep_spike_times
-                else []
-            ),
-        )
+        ).list.sum().alias(col_name),
     )
-    # join counts back to the original intervals frame, to preserve intervals without spikes:
-    with_spike_count = (
-        intervals_lf
-        .with_columns(
-            start.alias("_start"),
-            pl.lit(0).alias(col_name),
-        )
-        .update(
-            other=with_spike_count.select('_start', col_name),
-            on="_start",
-            how='left',
-            include_nulls=False,
-        )
-        .sort("_start")
-        .drop("_start")
-    )
+    if not keep_spike_times:
+        with_spike_count = with_spike_count.drop("_spike_times")
     if isinstance(intervals_frame, pl.LazyFrame):
         return with_spike_count
     return with_spike_count.collect()
@@ -96,7 +89,7 @@ def insert_spike_counts_per_interval(
     unit_id_col: str = "unit_id",
     start_inclusive: bool = True,
     end_inclusive: bool = True,
-    rechunk: bool = True,
+    rechunk: bool = False,
     apply_obs_intervals: bool = True,
 ) -> polars._typing.FrameType:
     """For every unit, count the number of spikes within each interval defined by pairs of expressions
@@ -135,7 +128,7 @@ def insert_spike_counts_per_interval(
         units_columns.append("obs_intervals")
     units_df = units_frame.select(units_columns)
     if isinstance(units_frame, pl.LazyFrame):
-        units_df = units_df.collect() # cannot iterate over LazyFrame.group_by()
+        units_df = units_df.collect()  # cannot iterate over LazyFrame.group_by()
     logger.debug(f"adding spike counts for {len(units_df)} units")
     dfs = []
     # for each unit:
@@ -158,9 +151,9 @@ def insert_spike_counts_per_interval(
                 keep_spike_times=False,
             )
             #! rm after testing:
-            assert len(temp_intervals.collect()) == len(trials_lf.collect())
+            # assert len(temp_intervals.collect()) == len(trials_lf.collect())
         dfs.append(temp_intervals)
-    
+
     df = pl.concat(dfs, rechunk=rechunk)
     if apply_obs_intervals:
         df = (
@@ -171,16 +164,14 @@ def insert_spike_counts_per_interval(
             )
             .with_columns(
                 *[
-                    pl.when(
-                        pl.col("is_observed").eq(False)
-                    )
+                    pl.when(pl.col("is_observed").eq(False))
                     .then(None)
                     .otherwise(pl.col(name))
                     .alias(name)
                     for name in col_names
                 ]
             )
-            .drop('is_observed')
+            .drop("is_observed")
         )
     # return frame in the same format as the input
     if isinstance(trials_frame, pl.LazyFrame):
@@ -286,10 +277,27 @@ df = insert_is_observed(
     ),
 )
 # print(df)
-df = insert_is_observed(trials, pl.DataFrame({"unit_id": ["unit_0",], "obs_intervals": [(-10., 500.), ]}))
+df = insert_is_observed(
+    trials,
+    pl.DataFrame(
+        {
+            "unit_id": [
+                "unit_0",
+            ],
+            "obs_intervals": [
+                (-10.0, 500.0),
+            ],
+        }
+    ),
+)
 # print(df)
 
-t = pl.concat([trials.with_columns(pl.lit("unit_0").alias("unit_id")), trials.with_columns(pl.lit("unit_1").alias("unit_id"))])
+t = pl.concat(
+    [
+        trials.with_columns(pl.lit("unit_0").alias("unit_id")),
+        trials.with_columns(pl.lit("unit_1").alias("unit_id")),
+    ]
+)
 # print(t)
 # df = insert_is_observed(t, pl.DataFrame({"unit_id": ["unit_0", "unit_1"], "obs_intervals": [[(-10., 150.), (600., 1100.)], [(-100., 1400.)]]}))
 # print(df.sort('unit_id', 'start_time').head(20))
@@ -311,32 +319,48 @@ t = pl.concat([trials.with_columns(pl.lit("unit_0").alias("unit_id")), trials.wi
 ## two intervals per trial:
 t0 = time.time()
 
-df = insert_spike_counts_per_interval(
-    trials_frame=pl.read_parquet("C:/Users/ben.hardcastle/github/scratch/dr_qc/trials.parquet"),
-    starts=(pl.col("start_time"), pl.col("stim_start_time"), ),
-    ends=(pl.col("stim_start_time"), pl.col("response_window_stop_time"), ),
-    col_names=("baseline", "response",),
-    units_frame=pl.read_parquet("C:/Users/ben.hardcastle/github/scratch/dr_qc/units.parquet"),
-    apply_obs_intervals=True,
-)
-if isinstance(df, pl.LazyFrame):
-    df = df.collect()
-print(df.sort('unit_id', 'start_time'))
+# df = insert_spike_counts_per_interval(
+#     trials_frame=pl.read_parquet(
+#         "C:/Users/ben.hardcastle/github/scratch/dr_qc/trials.parquet"
+#     ),
+#     starts=(
+#         pl.col("start_time"),
+#         pl.col("stim_start_time"),
+#     ),
+#     ends=(
+#         pl.col("stim_start_time"),
+#         pl.col("response_window_stop_time"),
+#     ),
+#     col_names=(
+#         "baseline",
+#         "response",
+#     ),
+#     units_frame=pl.read_parquet(
+#         "C:/Users/ben.hardcastle/github/scratch/dr_qc/units.parquet"
+#     ),
+#     apply_obs_intervals=True,
+# )
+# if isinstance(df, pl.LazyFrame):
+#     df = df.collect()
+# print(df.sort("unit_id", "start_time"))
 print(f"time elapsed: {time.time() - t0:.2f} s")
 
 ## one interval per trial:
 t0 = time.time()
 df = insert_spike_counts_per_interval(
-    trials_frame=pl.read_parquet("C:/Users/ben.hardcastle/github/scratch/dr_qc/trials.parquet"),
-    starts=(pl.col("start_time"), ),
+    trials_frame=pl.read_parquet(
+        "C:/Users/ben.hardcastle/github/scratch/dr_qc/trials.parquet"
+    ),
+    starts=(pl.col("start_time"),),
     ends=(pl.col("stim_start_time"),),
     col_names=("baseline",),
-    units_frame=pl.read_parquet("C:/Users/ben.hardcastle/github/scratch/dr_qc/units.parquet"),
+    units_frame=pl.read_parquet(
+        "C:/Users/ben.hardcastle/github/scratch/dr_qc/units.parquet"
+    ),
     apply_obs_intervals=True,
-
 )
 if isinstance(df, pl.LazyFrame):
     df = df.collect()
-print(df.sort('unit_id', 'start_time'))
+print(df.sort("unit_id", "start_time"))
 
 print(f"time elapsed: {time.time() - t0:.2f} s")
