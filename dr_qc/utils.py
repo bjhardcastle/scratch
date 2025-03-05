@@ -526,17 +526,18 @@ def get_per_trial_spike_times(
     rechunk: bool = True,
 ) -> pl.DataFrame:
     """"""
+    units_df_cols = ('unit_id', 'session_id', 'obs_intervals')
     if session_id is None and unit_ids is None:
         raise ValueError("Must specify session_id or unit_ids")
     elif unit_ids is None:
-        units_df = get_df('units').filter(pl.col('session_id') == session_id)
+        units_df = get_df('units').select(units_df_cols).filter(pl.col('session_id') == session_id)
         unit_ids = units_df['unit_id']
     else:
         if isinstance(unit_ids, str):
             unit_ids = (unit_ids,)
         elif isinstance(unit_ids, Generator):
             unit_ids = tuple(unit_ids)
-        units_df = get_df('units').filter(pl.col('unit_id').is_in(unit_ids))
+        units_df = get_df('units').select(units_df_cols).filter(pl.col('unit_id').is_in(unit_ids))
     
     if isinstance(starts, pl.Expr):
         starts = (starts,)
@@ -555,9 +556,10 @@ def get_per_trial_spike_times(
     
     spike_times_all_units: dict[str, npt.NDArray] = get_spike_times(unit_ids)
     
-    results_df = pl.DataFrame()
+    results_dfs = []
     for (session_id, *_), session_trials in trials_df.group_by(pl.col('session_id')):
         session_units = units_df.filter(pl.col('session_id') == session_id)
+        
         for row in session_units.iter_rows(named=True):
             unit_trials = session_trials.clone()
             if apply_obs_intervals: 
@@ -596,10 +598,8 @@ def get_per_trial_spike_times(
                             pl.when(pl.col('is_observed').not_()).then(pl.lit(None)).otherwise(pl.col(col_name)).alias(col_name),
                         )
                     )
-            results_df = results_df.vstack(unit_trials) # zero-copy append. Should be lower mem usage than concat
-    if rechunk:
-        results_df = results_df.rechunk()
-    return results_df
+            results_dfs.append(unit_trials) 
+    return pl.concat(results_dfs, rechunk=rechunk)
 
 
 # paths ----------------------------------------------------------- #
