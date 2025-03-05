@@ -10,6 +10,7 @@ import json
 import functools
 import logging
 import logging.handlers
+import multiprocessing
 import os
 import pathlib
 import sys
@@ -28,6 +29,7 @@ import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 import polars as pl
+import polars._typing
 import sklearn
 import pynwb
 import tqdm
@@ -435,8 +437,6 @@ def get_unit_responses(
                 conditions_with_responses.extend(future.result())
     return conditions_with_responses
 
-import polars._typing
-
 def insert_is_observed(
     intervals_frame: polars._typing.FrameType,
     units_frame: polars._typing.FrameType,
@@ -516,16 +516,28 @@ def insert_is_observed(
     return intervals_lf.collect()
 
 def get_per_trial_spike_times(
-    unit_ids: Iterable[str],
     starts: pl.Expr | Iterable[pl.Expr],
     ends: pl.Expr | Iterable[pl.Expr],
     col_names: str | Iterable[str] = "n_spikes",
-    intervals_df: str | pl.DataFrame = 'trials', 
-    with_tqdm: bool = False,
+    session_id: str | None = None,
+    unit_ids: Iterable[str] | None = None,
+    trials_frame: str | polars._typing.FrameType = 'trials', 
     apply_obs_intervals: bool = True,
+    rechunk: bool = True,
 ) -> pl.DataFrame:
-    """Returns a df with len == n_units * n_trials ~= about .5 million rows per session, with spike
-    times within intervals """
+    """"""
+    if session_id is None and unit_ids is None:
+        raise ValueError("Must specify session_id or unit_ids")
+    elif unit_ids is None:
+        units_df = get_df('units').filter(pl.col('session_id') == session_id)
+        unit_ids = units_df['unit_id']
+    else:
+        if isinstance(unit_ids, str):
+            unit_ids = (unit_ids,)
+        elif isinstance(unit_ids, Generator):
+            unit_ids = tuple(unit_ids)
+        units_df = get_df('units').filter(pl.col('unit_id').is_in(unit_ids))
+    
     if isinstance(starts, pl.Expr):
         starts = (starts,)
     if isinstance(ends, pl.Expr):
@@ -536,58 +548,59 @@ def get_per_trial_spike_times(
         raise ValueError("col_names must be unique")
     if len(starts) != len(ends) != len(col_names):
         raise ValueError("starts, ends, and col_names must have the same length")
-    if isinstance(intervals_df, str):
-        intervals_df = get_df(intervals_df)
-    elif isinstance(intervals_df, pl.LazyFrame):
-        intervals_df = intervals_df.collect()
-        
-    units = get_df('units').filter(pl.col('unit_id').is_in(unit_ids))
-    unit_ids = units.sort('session_id')['unit_id']
-    all_units_spike_times: dict[str, npt.NDArray] = get_spike_times(units['unit_id'])
+    if isinstance(trials_frame, str):
+        trials_df = get_df(trials_frame)
+    elif isinstance(trials_frame, pl.LazyFrame):
+        trials_df = trials_frame.collect()
     
-    results: list[dict] = []
-    units_iterable = units.iter_rows(named=True)
-    if with_tqdm:
-        units_iterable = tqdm.tqdm(units_iterable, total=len(units), unit='units')
-    for unit in units_iterable:
-        # mark rows in table as 'observed or not observed'
-        intervals_lf = (
-            intervals_df
-            .lazy()
-            .filter(pl.col('session_id') == unit['session_id'])
-        )
-        if apply_obs_intervals:
-            intervals_lf = insert_is_observed(intervals_lf, units)
-            
-        for (start, end, col_name) in zip(starts, ends, col_names):
-            trials = (
-                intervals_lf
-                .with_columns(
+    spike_times_all_units: dict[str, npt.NDArray] = get_spike_times(unit_ids)
+    
+    results_df = pl.DataFrame()
+    for (session_id, *_), session_trials in trials_df.group_by(pl.col('session_id')):
+        session_units = units_df.filter(pl.col('session_id') == session_id)
+        for row in session_units.iter_rows(named=True):
+            unit_trials = session_trials.clone()
+            if apply_obs_intervals: 
+                # units from one session can have different obs_intervals, so do this per unit
+                unit_trials = insert_is_observed(unit_trials, session_units.filter(pl.col('unit_id') == row['unit_id']))
+            for (start, end, col_name) in zip(starts, ends, col_names):
+                # add start:end interval to trials temporarily
+                unit_trials = unit_trials.with_columns(
                     pl.concat_list(start, end).alias(col_name),
                 )
-            ).collect()
-            spikes = []
-            for start, stop in np.searchsorted(spike_times, trials[interval].to_list()):
-                # searchsorted with intervals always returns two numbers, even if there are no spikes in the interval: we have to disambiguate "out of bounds" from "no spikes in interval"
-                if 0 <= start < stop <= len(spike_times):
-                    count = stop - start
-                elif start == stop and 0 < start and stop < len(spike_times):
-                    count = 0
-                else:
-                    count = None
-                counts[interval].append(count)
-        
-        
-        spike_times = all_units_spike_times[unit['unit_id']]
-        
-        counts = {
-            'trial_index': trials['trial_index'], 
-            'unit_id': [unit['unit_id']] * len(trials),
-        }
-        for interval in ('baseline', 'response'):
-        assert all(len(counts[k]) == len(trials) for k in counts)
-        results.append(counts)
-    return pl.concat((pl.DataFrame(r) for r in results), how='vertical_relaxed')
+                # get spike times with start:end interval for each row of the trials table
+                spike_times = spike_times_all_units[row['unit_id']]
+                spikes_in_intervals: list[list[float]] = []
+                for a, b in np.searchsorted(spike_times, unit_trials[col_name].to_list()):
+                    spikes_in_intervals.append(list(spike_times[a:b])) #! spikes coincident with end of interval not included
+                # add spike times to trials for this unit, replacing start:end interval 
+                unit_trials = (
+                    unit_trials
+                    .with_columns(
+                        pl.lit(row['unit_id']).alias('unit_id'),
+                    )
+                    .drop(col_name)
+                    .insert_column(
+                        index=-1,
+                        column=pl.Series(
+                            name=col_name, 
+                            values=spikes_in_intervals,
+                            dtype=pl.List(pl.Float64),
+                        )
+                    )
+                )
+                if apply_obs_intervals:
+                    unit_trials = (
+                        unit_trials
+                        .with_columns(
+                            pl.when(pl.col('is_observed').not_()).then(pl.lit(None)).otherwise(pl.col(col_name)).alias(col_name),
+                        )
+                    )
+            results_df = results_df.vstack(unit_trials) # zero-copy append. Should be lower mem usage than concat
+    if rechunk:
+        results_df = results_df.rechunk()
+    return results_df
+
 
 # paths ----------------------------------------------------------- #
 @functools.cache
