@@ -523,7 +523,8 @@ def get_per_trial_spike_times(
     unit_ids: Iterable[str] | None = None,
     trials_frame: str | polars._typing.FrameType = 'trials', 
     apply_obs_intervals: bool = True,
-    rechunk: bool = True,
+    as_counts: bool = False,
+    keep_only_necessary_cols: bool = True,
 ) -> pl.DataFrame:
     """"""
     units_df_cols = ('unit_id', 'session_id', 'obs_intervals')
@@ -551,55 +552,89 @@ def get_per_trial_spike_times(
         raise ValueError("starts, ends, and col_names must have the same length")
     if isinstance(trials_frame, str):
         trials_df = get_df(trials_frame)
-    elif isinstance(trials_frame, pl.LazyFrame):
+    trials_df = (
+        trials_df
+        .filter(pl.col('session_id').is_in(units_df['session_id'].unique()))
+    )
+    # temp add columns for each interval with type list[float] (start, end)
+    temp_col_prefix = "__temp_interval"
+    for (start, end, col_name) in zip(starts, ends, col_names):
+        trials_df = (
+            trials_df
+            .with_columns(
+                pl.concat_list(start, end).alias(f"{temp_col_prefix}_{col_name}"),
+            )
+        )
+    if isinstance(trials_frame, pl.LazyFrame):
         trials_df = trials_frame.collect()
     
     spike_times_all_units: dict[str, npt.NDArray] = get_spike_times(unit_ids)
     
-    results_dfs = []
+    results = {
+        'unit_id': [], 
+        # session_id can be derived from unit_id
+        'trial_index': [],
+    }
+    for col_name in col_names:
+        results[col_name] = []
+    
     for (session_id, *_), session_trials in trials_df.group_by(pl.col('session_id')):
-        session_units = units_df.filter(pl.col('session_id') == session_id)
-        
+        session_units = units_df.filter(pl.col('session_id') == session_id).unique('unit_id')
+        # unit_ids should already be unique, but make sure so we don't want to do unnecessary work
+        results['trial_index'].extend(session_trials['trial_index'].to_list() * len(session_units))
         for row in session_units.iter_rows(named=True):
-            unit_trials = session_trials.clone()
-            if apply_obs_intervals: 
-                # units from one session can have different obs_intervals, so do this per unit
-                unit_trials = insert_is_observed(unit_trials, session_units.filter(pl.col('unit_id') == row['unit_id']))
+            if row['unit_id'] is None:
+                raise ValueError(f"Missing unit_id in {row=}")
+            results['unit_id'].extend([row['unit_id']] * len(session_trials))
+            
             for (start, end, col_name) in zip(starts, ends, col_names):
-                # add start:end interval to trials temporarily
-                unit_trials = unit_trials.with_columns(
-                    pl.concat_list(start, end).alias(col_name),
-                )
                 # get spike times with start:end interval for each row of the trials table
                 spike_times = spike_times_all_units[row['unit_id']]
-                spikes_in_intervals: list[list[float]] = []
-                for a, b in np.searchsorted(spike_times, unit_trials[col_name].to_list()):
-                    spikes_in_intervals.append(list(spike_times[a:b])) #! spikes coincident with end of interval not included
-                # add spike times to trials for this unit, replacing start:end interval 
-                unit_trials = (
-                    unit_trials
+                spikes_in_intervals: list[list[float]] | list[float] = []
+                for a, b in np.searchsorted(spike_times, session_trials[f"{temp_col_prefix}_{col_name}"].to_list()):
+                    spike_times_in_interval = spike_times[a:b]
+                    #! spikes coincident with end of interval are not included
+                    if as_counts:
+                        spikes_in_intervals.append(len(spike_times_in_interval))
+                    else:
+                        spikes_in_intervals.append(spike_times_in_interval.tolist())
+                results[col_name].extend(spikes_in_intervals)
+                
+    if apply_obs_intervals or not keep_only_necessary_cols:
+        results_df = (
+            trials_df
+            .drop(pl.selectors.starts_with(temp_col_prefix))
+            .join(
+                other=(
+                    pl.DataFrame(results)
                     .with_columns(
-                        pl.lit(row['unit_id']).alias('unit_id'),
+                        pl.col('unit_id').str.split('_').list.slice(0, 2).list.join('_').alias('session_id'),
                     )
-                    .drop(col_name)
-                    .insert_column(
-                        index=-1,
-                        column=pl.Series(
-                            name=col_name, 
-                            values=spikes_in_intervals,
-                            dtype=pl.List(pl.Float64),
-                        )
-                    )
-                )
-                if apply_obs_intervals:
-                    unit_trials = (
-                        unit_trials
-                        .with_columns(
-                            pl.when(pl.col('is_observed').not_()).then(pl.lit(None)).otherwise(pl.col(col_name)).alias(col_name),
-                        )
-                    )
-            results_dfs.append(unit_trials) 
-    return pl.concat(results_dfs, rechunk=rechunk)
+                ),
+                on=('session_id', 'trial_index'),
+                how='left',
+            )
+        )
+    else:
+        results_df = pl.DataFrame(results)
+    
+    if apply_obs_intervals:
+        results_df = (
+            insert_is_observed(
+                intervals_frame=results_df,
+                units_frame=units_df,
+            )
+            .with_columns(
+                *[
+                    pl.when(pl.col('is_observed').not_()).then(pl.lit(None)).otherwise(pl.col(col_name)).alias(col_name)
+                    for col_name in col_names
+                ]
+            )
+        )
+        if keep_only_necessary_cols:
+            results_df = results_df.drop(pl.all().exclude('unit_id', 'trial_index', *col_names))
+
+    return results_df
 
 
 # paths ----------------------------------------------------------- #
