@@ -192,7 +192,7 @@ def insert_spike_counts_per_interval(
         return df
     else:
         assert isinstance(df, pl.LazyFrame)
-        return df.collect()
+        return df.collect(streaming=True)
 
 
 def insert_is_observed(
@@ -376,5 +376,22 @@ df = insert_spike_counts_per_interval(
 if isinstance(df, pl.LazyFrame):
     df = df.collect()
 print(df.sort("unit_id", "start_time"))
-
 print(f"time elapsed: {time.time() - t0:.2f} s")
+
+# ## one specific unit:
+# t0 = time.time()
+# unit_id = "636766_2023-01-23_C-168"
+# session_id = "_".join(unit_id.split("_")[:2])
+# df = insert_spike_counts_per_interval(
+#     trials_frame=pl.scan_parquet(f"s3://aind-scratch-data/dynamic-routing/cache/nwb_components/v0.0.261/trials/{session_id}.parquet"),
+#     starts=(pl.col("stim_start_time") - 2, pl.col("stim_start_time"),),
+#     ends=(pl.col("stim_start_time"), pl.col('stim_start_time') + 3, ),
+#     col_names=("baseline", 'response'),
+#     units_frame=pl.scan_parquet(f"s3://aind-scratch-data/dynamic-routing/cache/nwb_components/v0.0.261/units/{session_id}.parquet").filter(pl.col('unit_id') == unit_id),
+#     apply_obs_intervals=True,
+# )
+# if isinstance(df, pl.LazyFrame):
+#     df = df.collect()
+# print(df.sort("unit_id", "start_time").filter(pl.col('block_index') == 1, pl.col('context_name') == 'aud').describe())
+
+# print(f"time elapsed: {time.time() - t0:.2f} s")
