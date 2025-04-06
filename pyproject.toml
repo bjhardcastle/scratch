@@ -1,0 +1,27 @@
+[project]
+name = "scratch"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "altair>=5.5.0",
+    "deltalake>=0.25.4",
+    "h5py>=3.13.0",
+    "ipykernel>=6.29.5",
+    "ipython>=8.31.0",
+    "kerchunk>=0.2.8",
+    "npc-lims>=0.1.185",
+    "numpy>=2.2.0",
+    "pandas>=2.2.3",
+    "panel>=1.6.1",
+    "pip>=24.3.1",
+    "plotly-express>=0.4.1",
+    "polars>=1.17.1",
+    "pyarrow>=18.1.0",
+    "scikit-learn>=1.6.1",
+    "seaborn>=0.13.2",
+    "statsmodels>=0.14.4",
+    "vegafusion>=2.0.1",
+    "vl-convert-python>=1.7.0",
+]
