@@ -34,12 +34,7 @@ def write_cache(session_id: str):
     return computation
 
 
-for session_id in (
-        pl.read_csv("C:/Users/ben.hardcastle/Downloads/errors_table (1).csv")
-        .filter(
-            pl.col('output').str.contains('ConnectionError')
-        )
-    )['session_id']:
+for session_id in {'712141_2024-06-06', '716718_2024-08-01', '733780_2024-08-27'}:
     print(session_id)
     write_cache(session_id)
-    time.sleep(120)    time.sleep(120)
+    # time.sleep(120)    
