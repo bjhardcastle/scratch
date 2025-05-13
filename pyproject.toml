@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "aind-session>=0.3.14",
     "fastparquet>=2024.11.0",
+    "hvplot>=0.11.3",
     "ipykernel>=6.29.5",
     "matplotlib>=3.10.0",
     "npc-lims>=0.1.186",
@@ -19,6 +20,7 @@ dependencies = [
     "pydantic-settings>=2.7.1",
     "scikit-learn>=1.6.1",
     "scipy>=1.15.1",
+    "seaborn>=0.13.2",
     "statsmodels>=0.14.4",
     "tqdm>=4.67.1",
     "zarr>=3.0.5",
