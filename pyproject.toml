@@ -11,6 +11,7 @@ dependencies = [
     "ipykernel>=6.29.5",
     "ipython>=8.31.0",
     "kerchunk>=0.2.8",
+    "nbconvert>=7.16.6",
     "npc-lims>=0.1.185",
     "numpy>=2.2.0",
     "pandas>=2.2.3",
