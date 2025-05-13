@@ -15,10 +15,10 @@ PROD_EPHYS_SESSION_FILTER = pl.Expr.and_(
         ~pl.col("keywords").list.contains("training"),
         ~pl.col("keywords").list.contains("context_naive"),
         ~pl.col("keywords").list.contains("templeton"),
-    ]
+    ]   
 )
 
-LATE_AUTOREWARDS_SESSION_FILTER = (
+LATE_AUTOREWARDS_SESSION_FILTER: pl.Expr = (
     pl.col("keywords").list.contains("late_autorewards").eq(True)
 )
 EARLY_AUTOREWARDS_SESSION_FILTER = (
