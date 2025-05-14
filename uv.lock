@@ -1464,6 +1464,24 @@ wheels = [
 ]
 
 [[package]]
+name = "npc-ephys"
+version = "0.1.16"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "npc-io" },
+    { name = "npc-lims" },
+    { name = "npc-sync" },
+    { name = "pandas" },
+    { name = "tqdm" },
+    { name = "wavpack-numcodecs" },
+    { name = "zarr" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/12/07/18c34c2c6a2e537ad32c845cef43e61dd513f1746382e651a71cafe610c2/npc_ephys-0.1.16.tar.gz", hash = "sha256:ba6622213d578e6916e20740ca0aa66482e1cf16b36f1db452247ced38f718b7", size = 28162, upload-time = "2024-06-20T20:34:41.02Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4b/a4/403905c6ba87658ae33bd9315688a5bc3eca40de2fab8c07b3894f3f9df0/npc_ephys-0.1.16-py3-none-any.whl", hash = "sha256:bd9f4f8718958af58c9951fe9438c06a4ce7a5def85459378e98767be3f40cc6", size = 27877, upload-time = "2024-06-20T20:34:39.218Z" },
+]
+
+[[package]]
 name = "npc-io"
 version = "0.1.32"
 source = { registry = "https://pypi.org/simple" }
@@ -1513,6 +1531,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c9/10/9323cfedd4ab89f7ce15661292deeb5add7485a47a8385bd72012c8fd12d/npc_session-0.1.40.tar.gz", hash = "sha256:6199827c598edcf7e7d9dbb372946f971a0b056c6afc9eee2372b85435206ea2", size = 12360, upload-time = "2024-12-04T18:34:04.024Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/11/79/750adc971f376ad6c7d3d1962259365fc70324e35fad137a720b9619254f/npc_session-0.1.40-py3-none-any.whl", hash = "sha256:4f123a2feac68f2a5f6f5c586f7c397d042f31d97a21cfcf21e264598e439c58", size = 11637, upload-time = "2024-12-04T18:34:02.533Z" },
+]
+
+[[package]]
+name = "npc-sync"
+version = "0.1.24"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "h5py" },
+    { name = "matplotlib" },
+    { name = "npc-io" },
+    { name = "npc-session" },
+    { name = "numpy" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f5/70/b480a177b647b830fc44159242e52a9084270934b9cb58710cb92d11bddb/npc_sync-0.1.24.tar.gz", hash = "sha256:fd9223e7448ba9e6ae497bc50b8a5ba0e92d64c47ff07fbe77110bf4465885a7", size = 23051, upload-time = "2025-02-19T01:02:38.145Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/21/8b/03acb38ed3194dae1466d20851178b2a044625776cd285dbeb0296e886e6/npc_sync-0.1.24-py3-none-any.whl", hash = "sha256:d53d5d829169a49d4a53089ecaa35dbc0cbeda99f6dce4bb6e2f4cb32fe15bcb", size = 19397, upload-time = "2025-02-19T01:02:36.77Z" },
 ]
 
 [[package]]
@@ -2558,6 +2593,7 @@ dependencies = [
     { name = "ipython" },
     { name = "kerchunk" },
     { name = "nbconvert" },
+    { name = "npc-ephys" },
     { name = "npc-lims" },
     { name = "numpy" },
     { name = "pandas" },
@@ -2582,6 +2618,7 @@ requires-dist = [
     { name = "ipython", specifier = ">=8.31.0" },
     { name = "kerchunk", specifier = ">=0.2.8" },
     { name = "nbconvert", specifier = ">=7.16.6" },
+    { name = "npc-ephys", specifier = ">=0.1.16" },
     { name = "npc-lims", specifier = ">=0.1.185" },
     { name = "numpy", specifier = ">=2.2.0" },
     { name = "pandas", specifier = ">=2.2.3" },
@@ -2898,6 +2935,17 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/91/3c/c34e52138fa38eb6059cdb2c603ba1433decf4f97cb89e767c04a9605eff/vl_convert_python-1.7.0-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8b50c492b640abb89a54a71e2c26f0f2d2c1cedc42030cc55bcc202670334724", size = 30089941, upload-time = "2024-10-05T14:32:59.429Z" },
     { url = "https://files.pythonhosted.org/packages/ae/e2/c4a3fff3efcfeebaab554c9c4b027e875fd339da7f619b144765353a60d1/vl_convert_python-1.7.0-cp37-abi3-win_amd64.whl", hash = "sha256:285bbadb1ce8a922c87f6e75a9544fe10a652d37bd4c1519fb93f90bab381588", size = 29796401, upload-time = "2024-10-05T14:33:04.65Z" },
 ]
+
+[[package]]
+name = "wavpack-numcodecs"
+version = "0.2.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numcodecs" },
+    { name = "numpy" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b2/a1/d6dbfd3dcbc48fe7a14ce84d41522ae38ba60fd2742af1418ca224cb6da6/wavpack-numcodecs-0.2.3.tar.gz", hash = "sha256:e78a01f274bff72063a1eca9d999dcf9b0f060055e12fe8c915830bf29a23e06", size = 3559418, upload-time = "2025-05-14T09:48:56.988Z" }
 
 [[package]]
 name = "wcwidth"
