@@ -2,7 +2,6 @@ import json
 import pathlib
 import time
 
-
 import aind_session
 import codeocean.capsule
 import codeocean.computation
@@ -23,11 +22,11 @@ def run_encoding(session_id: str):
             ),
             codeocean.computation.NamedRunParam(
                 param_name="result_prefix",
-                value="v268",  # required
+                value="v268_quiescent",  # required
             ),
             codeocean.computation.NamedRunParam(
                 param_name="run_id",
-                value="0",
+                value="2",
             ),
             codeocean.computation.NamedRunParam(
                 param_name="test",
@@ -36,6 +35,10 @@ def run_encoding(session_id: str):
             codeocean.computation.NamedRunParam(
                 param_name="use_process_pool",
                 value="False",  # all values must be supplied as strings
+            ),
+            codeocean.computation.NamedRunParam(
+                param_name="override_params_json",
+                value='{"time_of_interest": "quiescent"}',  # all values must be supplied as strings
             ),
         ],
     )
@@ -53,21 +56,22 @@ session_ids = (
         "is_annotated",
         "is_production",
         pl.col("issues").list.len() == 0,
-        pl.col('project') == 'Templeton'
     )
     .collect()
 )["session_id"]
 
-session_ids_16gb = ['713655_2024-08-07', '706401_2024-04-22']
+session_ids_16gb = ["713655_2024-08-07", "706401_2024-04-22"]
 
 session_to_computation = {}
 for session_id in tqdm.tqdm(session_ids, desc="Sessions", unit="session"):
-    if session_id in session_ids_16gb:
-        print(f"Skipping {session_id} because it is requires more than a capsule with more than 8GB memory")
-        continue
+    # if session_id in session_ids_16gb:
+    #     print(f"Skipping {session_id} because it is requires more than a capsule with more than 8GB memory")
+    #     continue
     print(session_id)
     session_to_computation[session_id] = run_encoding(session_id).id
-    pathlib.Path('computations.json').write_text(json.dumps(session_to_computation, indent=4))
+    pathlib.Path("computations.json").write_text(
+        json.dumps(session_to_computation, indent=4)
+    )
     time.sleep(3)  # Sleep to avoid hitting the API rate limit
 
 # for session, id_ in json.loads(pathlib.Path("computations.json").read_text()).items():
