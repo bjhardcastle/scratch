@@ -1127,6 +1127,24 @@ wheels = [
 ]
 
 [[package]]
+name = "lazynwb"
+version = "0.2.54"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "h5py" },
+    { name = "npc-io" },
+    { name = "pandas" },
+    { name = "polars", extra = ["pandas"] },
+    { name = "remfile" },
+    { name = "tqdm" },
+    { name = "zarr" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/83/ef/78995119c0105a09e1b1056a228bf7eeae4f2f1126f7ccde9da07672effe/lazynwb-0.2.54.tar.gz", hash = "sha256:446cad2fadffda6fa30c00d9b374575e5047d36d1c90c94d5933fd2812cbcd57", size = 34941, upload-time = "2025-05-23T18:25:11.191Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/63/bc/ae8e1eaeea5c58af29c504f26d104353f012003f6196d522f9bcd337cb87/lazynwb-0.2.54-py3-none-any.whl", hash = "sha256:99a4cf7b14c626118ddffda3c79773587515692b67e269f0434fad6cc5a92b3c", size = 30428, upload-time = "2025-05-23T18:25:09.675Z" },
+]
+
+[[package]]
 name = "linkify-it-py"
 version = "2.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1888,6 +1906,29 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/0f/5c/cc23daf0a228d6fadbbfc8a8c5165be33157abe5b9d72af3e127e0542857/polars-1.27.1-cp39-abi3-win_arm64.whl", hash = "sha256:4f238ee2e3c5660345cb62c0f731bbd6768362db96c058098359ecffa42c3c6c", size = 31891470, upload-time = "2025-04-11T10:25:38.74Z" },
 ]
 
+[package.optional-dependencies]
+pandas = [
+    { name = "pandas" },
+    { name = "pyarrow" },
+]
+
+[[package]]
+name = "polars-ds"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "polars" },
+    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/33/ce/f742288a5748e6944156c0f05f0de65b802deb4f8568b867d9ec66a86bd3/polars_ds-0.9.0.tar.gz", hash = "sha256:3a784d41061ff3613f16bc73f034db05b5d0d4c4d15183e5ed4d59004688b031", size = 2077979, upload-time = "2025-05-28T04:15:09.172Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/70/ac/195177fa9d96cd44d10bb8da5218497e646a201b097f723f42c75cc0c77f/polars_ds-0.9.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:5d5ad9687b31f7c162002470fc07d0c170c55bf9c1aecda07020fc7f059caeb7", size = 14608391, upload-time = "2025-05-28T04:14:56.647Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/c3/b0ba3923ed5fab5507a59ac642607e44224fcebb9defdc6e405444a4eebb/polars_ds-0.9.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:273aefaa9cc5978fc6f6c128aa48946d5d075e388c3c3bf4d88116c6c086f645", size = 12560182, upload-time = "2025-05-28T04:14:59.58Z" },
+    { url = "https://files.pythonhosted.org/packages/99/14/880dc562b674c8c1d7c35aeb0b05d009a46be593734a90f50a421c89e83a/polars_ds-0.9.0-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:350edbb430d15b18df7f1fcb2276cee0997052c80b77912ceaf4c2e6d89edcd9", size = 15125739, upload-time = "2025-05-28T04:15:02.041Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/50/f1e53427c71546f71cc021b99c7c08b3c94ba900e92659c3a511fc4830b5/polars_ds-0.9.0-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:c4350c9395c16658852df3d2c2321d09697c30dfbb9a57ea4cc1c844e4190b22", size = 12930848, upload-time = "2025-05-28T04:15:04.391Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/85/5c4dfc62f5aa2baeea48dee99159b3efbba849e558cc5aae7560389b3c4b/polars_ds-0.9.0-cp39-abi3-win_amd64.whl", hash = "sha256:57f0ba94ce53e53845f12201bb35e968e4c99dc07f04b1537073e3a972a20f3e", size = 16216719, upload-time = "2025-05-28T04:15:06.847Z" },
+]
+
 [[package]]
 name = "prompt-toolkit"
 version = "3.0.51"
@@ -2365,6 +2406,20 @@ wheels = [
 ]
 
 [[package]]
+name = "remfile"
+version = "0.1.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "h5py" },
+    { name = "numpy" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7c/d1/e9ae25f762f188d912440c9f595c94e3148e9f6994bb43b1794a199f5610/remfile-0.1.13.tar.gz", hash = "sha256:230795a0f903c2e0650dedbef14167ff714d64bb6ce22e9c5d835a9afbdfff55", size = 13267, upload-time = "2024-05-29T18:14:04.448Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3e/33/485cb65a071e2e15b86693e25467ada58164f00ec076b8e24191671004cb/remfile-0.1.13-py3-none-any.whl", hash = "sha256:1e87dacc76a4db9fbbcb7ccaaa275e6b428b7d4528d39b88f8d790e17d1b50c3", size = 11916, upload-time = "2024-05-29T18:14:02.876Z" },
+]
+
+[[package]]
 name = "requests"
 version = "2.32.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2592,6 +2647,7 @@ dependencies = [
     { name = "ipykernel" },
     { name = "ipython" },
     { name = "kerchunk" },
+    { name = "lazynwb" },
     { name = "nbconvert" },
     { name = "npc-ephys" },
     { name = "npc-lims" },
@@ -2601,6 +2657,7 @@ dependencies = [
     { name = "pip" },
     { name = "plotly-express" },
     { name = "polars" },
+    { name = "polars-ds" },
     { name = "pyarrow" },
     { name = "scikit-learn" },
     { name = "seaborn" },
@@ -2617,6 +2674,7 @@ requires-dist = [
     { name = "ipykernel", specifier = ">=6.29.5" },
     { name = "ipython", specifier = ">=8.31.0" },
     { name = "kerchunk", specifier = ">=0.2.8" },
+    { name = "lazynwb", specifier = ">=0.2.54" },
     { name = "nbconvert", specifier = ">=7.16.6" },
     { name = "npc-ephys", specifier = ">=0.1.16" },
     { name = "npc-lims", specifier = ">=0.1.185" },
@@ -2626,6 +2684,7 @@ requires-dist = [
     { name = "pip", specifier = ">=24.3.1" },
     { name = "plotly-express", specifier = ">=0.4.1" },
     { name = "polars", specifier = ">=1.17.1" },
+    { name = "polars-ds", specifier = ">=0.9.0" },
     { name = "pyarrow", specifier = ">=18.1.0" },
     { name = "scikit-learn", specifier = ">=1.6.1" },
     { name = "seaborn", specifier = ">=0.13.2" },
