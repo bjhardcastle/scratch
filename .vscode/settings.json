@@ -8,5 +8,6 @@
         "titleBar.inactiveBackground": "#a8bf5e99",
         "titleBar.inactiveForeground": "#15202b99"
     },
-    "peacock.color": "#a8bf5e"
+    "peacock.color": "#a8bf5e",
+    "basedpyright.disableLanguageServices": true
 }
